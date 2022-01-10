@@ -1,11 +1,12 @@
 ACTIONS = ''
 LANGUAGES = 'C'
-DATA_DIR = '/home/mansour/bank/FICS/data/'  # Full path must be provided
+DATA_DIR = '/data/'
 PROJECTS_DIR = 'projects'
 ASTS_DIR = 'asts'
 SAVE_FORMAT = 'graph'  # json , graph , ast
 BCS_DIR = 'bcs'
 DATASETS_DIR = 'datasets'
+SARIF_DIR = 'sarif'
 PLOTS_DIR = 'plots'
 CLUSTERING_ALGS = 'dbscancos_0.3,dbscancos_0.02'
 CLUSTERING_FEAT = 'afs_NN,afs_G2v'

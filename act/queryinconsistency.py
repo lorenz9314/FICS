@@ -2,11 +2,15 @@ import hashlib
 from sre_parse import Pattern
 from tokenize import String
 
+import sarif_om as srf
+import json
+import os
+
 import paramiko
 import re
 from utils.inout import *
 import sys
-from settings import BENCHMARK_GROUNDTRUTH_PATH
+from settings import BENCHMARK_GROUNDTRUTH_PATH, DATA_DIR, SARIF_DIR
 sys.path.append(join_path(sys.path[0], BENCHMARK_GROUNDTRUTH_PATH))
 print sys.path[0]
 import sshtunnel
@@ -212,8 +216,8 @@ class QueryInconsistency(Act):
             self.server.stop()
             self.establish_ssh_client()
         self.mongodb_client.close()
-        raw_input("Press Enter to show the inconsistencies...")
-        os.system('clear')
+
+        sresults = []
 
         count = 1
         for result in local_results:
@@ -224,41 +228,46 @@ class QueryInconsistency(Act):
                 dependency = 'Data Flow'
             else:
                 dependency = 'Control&Data Flow'
-            print
-            print 'Inconsistency #{} , '.format(count), \
-                'Total subclusters: ({}) , '.format(len(result['subclusters'])), \
-                'Granularity: ({}) , '.format(result['construct_type']), \
-                'Similarity: ({}) , '.format(result['firststep_threshold']), \
-                'ID: {} , '.format(result['_id']), \
-                'Dependency: {}'.format(dependency)
-            print '=' * 80
+
             subcluster_count = 0
 
+            locations = []
             for subcluster in result['subclusters']:
-                print 'Subcluster #{} , '.format(subcluster_count), \
-                    'Total items: ({})'.format(subcluster['constructs_total'])
                 construct_counter = 1
                 for construct in subcluster['constructs']:
-                    # print construct['graph_path']
-                    # get_basename(construct['graph_path']).split('.pdg_')[0])
-                    # print construct['lines']
+                    path = construct['graph_path'].split('bcs/')[1].split('/pdg')[0]
+                    sregion =srf.Region(start_line=min(construct['lines']),
+                            end_line=max(construct['lines']))
 
-                    if construct_counter > 1:
-                        self.read_lines_of_code(construct, True)
-                    else:
-                        print '-' * 50
-                        self.read_lines_of_code(construct)
-                        print '-' * 50
-                    # We break here because we only show one construct in each cluster to make the output more readable
-                    # break
-                    # We just show the line numbers of the rest of constructs
+                    sloc = srf.Location(physical_location=srf.PhysicalLocation(
+                            srf.ArtifactLocation(path), region=sregion),
+                            logical_locations=srf.LogicalLocation(
+                            'Subcluster #{} , '.format(subcluster_count)))
+                    locations += [sloc]
+
                     construct_counter += 1
                 subcluster_count += 1
-                print '+' * 80
-            # if count % 2 == 0:
-            raw_input("Press Enter to continue...")
-            os.system('clear')
+                sres = srf.Result('Inconsistency #{} , '.format(count), \
+                    'Total subclusters: ({}) , '.format(len(result['subclusters'])), \
+                    'Granularity: ({}) , '.format(result['construct_type']), \
+                    'Similarity: ({}) , '.format(result['firststep_threshold']), \
+                    'ID: {} , '.format(result['_id']), \
+                    'Dependency: {}'.format(dependency), locations=locations) 
+
+            sresults.append(sres)
             count += 1
+
+
+        # Create Path for SARIF output to be written to.
+        sarif_path = os.path.join(DATA_DIR, SARIF_DIR)
+        if not os.path.isdir(sarif_path):
+            os.makedirs(sarif_path, 0o777)
+
+        with open(os.path.join(sarif_path,
+                self.current_project + ".json"), "w") as f:
+            json.dump({"version": "2.1.0",
+                "$schema": "http://json.schemastore.org/sarif-2.1.0-rtm.4",
+                "runs": sresults}, f, default=lambda x: x.__dict__)
 
     def filter_results(self, results):
         existing_inconsistencies = self.get_ground_truth()
