@@ -2,6 +2,7 @@ import hashlib
 from sre_parse import Pattern
 from tokenize import String
 
+from SarifHolder import SarifHolder
 import sarif_om as srf
 import json
 import os
@@ -236,38 +237,41 @@ class QueryInconsistency(Act):
                 construct_counter = 1
                 for construct in subcluster['constructs']:
                     path = construct['graph_path'].split('bcs/')[1].split('/pdg')[0]
-                    sregion =srf.Region(start_line=min(construct['lines']),
+                    sregion = srf.Region(start_line=min(construct['lines']),
                             end_line=max(construct['lines']))
 
                     sloc = srf.Location(physical_location=srf.PhysicalLocation(
                             srf.ArtifactLocation(path), region=sregion),
                             logical_locations=srf.LogicalLocation(
-                            'Subcluster #{} , '.format(subcluster_count)))
+                            'Subcluster {}'.format(subcluster_count)))
                     locations += [sloc]
 
                     construct_counter += 1
                 subcluster_count += 1
-                sres = srf.Result('Inconsistency #{} , '.format(count), \
-                    'Total subclusters: ({}) , '.format(len(result['subclusters'])), \
-                    'Granularity: ({}) , '.format(result['construct_type']), \
-                    'Similarity: ({}) , '.format(result['firststep_threshold']), \
-                    'ID: {} , '.format(result['_id']), \
+                sres = srf.Result('Inconsistency {}'.format(count), \
+                    'Total subclusters: ({})'.format(len(result['subclusters'])), \
+                    'Granularity: ({})'.format(result['construct_type']), \
+                    'Similarity: ({})'.format(result['firststep_threshold']), \
+                    'ID: {}'.format(result['_id']), \
                     'Dependency: {}'.format(dependency), locations=locations) 
 
             sresults.append(sres)
             count += 1
-
 
         # Create Path for SARIF output to be written to.
         sarif_path = os.path.join(DATA_DIR, SARIF_DIR)
         if not os.path.isdir(sarif_path):
             os.makedirs(sarif_path, 0o777)
 
-        with open(os.path.join(sarif_path,
-                self.current_project + ".json"), "w") as f:
-            json.dump({"version": "2.1.0",
-                "$schema": "http://json.schemastore.org/sarif-2.1.0-rtm.4",
-                "runs": sresults}, f, default=lambda x: x.__dict__)
+        sarif_out = os.path.join(sarif_path,
+                self.current_project + ".sarif")
+
+        holder = SarifHolder()
+        holder.addRun(srf.Run(srf.Tool("FICS"),
+            results=sresults))
+
+        with open(sarif_out, "w") as f:
+            json.dump(holder.do_print(), f, indent=4, ensure_ascii=False)
 
     def filter_results(self, results):
         existing_inconsistencies = self.get_ground_truth()
@@ -588,3 +592,23 @@ class QueryInconsistency(Act):
                     return True
 
         return False
+
+def prune(items):                                                      
+    if type(items) == list:                                            
+        result = []                                                    
+        for i in items:                                                
+            if i is not None:                                          
+                result.append(prune(i))                                
+                                                                       
+        return result                                                  
+                                                                       
+    if type(items) == dict:                                            
+        result = {}                                                    
+        for i in items.items():                                        
+            if i[1] is not None:                                       
+                result.update({i[0]: prune(i[1])})                     
+                                                                       
+        return result                                                  
+                                                                       
+    print(items)
+    return items
