@@ -218,9 +218,9 @@ class QueryInconsistency(Act):
             self.establish_ssh_client()
         self.mongodb_client.close()
 
-        sresults = []
-
+        results = []
         count = 1
+
         for result in local_results:
             if count < self.arguments.starting_report_item:
                 count += 1
@@ -229,57 +229,43 @@ class QueryInconsistency(Act):
                 dependency = 'Data Flow'
             else:
                 dependency = 'Control&Data Flow'
-
+            print
+            print 'Inconsistency #{} , '.format(count), \
+                'Total subclusters: ({}) , '.format(len(result['subclusters'])), \
+                'Granularity: ({}) , '.format(result['construct_type']), \
+                'Similarity: ({}) , '.format(result['firststep_threshold']), \
+                'ID: {} , '.format(result['_id']), \
+                'Dependency: {}'.format(dependency)
+            print '=' * 80
             subcluster_count = 0
 
-            locations = []
             for subcluster in result['subclusters']:
+                print 'Subcluster #{} , '.format(subcluster_count), \
+                    'Total items: ({})'.format(subcluster['constructs_total'])
                 construct_counter = 1
                 for construct in subcluster['constructs']:
-                    for diff in construct["node_diffs"]:
-                        kind = diff["node_name"].split()[0]
+                    # print construct['graph_path']
+                    # get_basename(construct['graph_path']).split('.pdg_')[0])
+                    # print construct['lines']
 
-                        # If the node type is not of the kinds below,
-                        # that the loop is skipped and no entry is
-                        # created in the SARIF file.
-                        if kind not in \
-                                ["call", "check", "store","type"]:
-                            continue
-
-                        path = construct['source_file_path']
-                        lines = set(diff["lines"])
-                        sregion = srf.Region(
-                                start_line=min(construct['lines']),
-                                end_line=max(construct['lines']))
-
-                        sloc = srf.Location(
-                                physical_location=srf.PhysicalLocation(
-                                srf.ArtifactLocation(path),
-                                region=sregion),
-                                logical_locations=srf.LogicalLocation(
-                                'Subcluster {}' \
-                                        .format(subcluster_count)))
-
-                        sres = srf.Result(
-                            'Inconsistency {}' \
-                                .format(count),
-                            'Total subclusters: ({})' \
-                                .format(len(result['subclusters'])),
-                            'Granularity: ({})' \
-                                .format(result['construct_type']),
-                            'Similarity: ({})' \
-                                .format(result['firststep_threshold']),
-                            'ID: {}'\
-                                .format(result['_id']),
-                            'Dependency: {}' \
-                                .format(kind), locations=[sloc]) 
-
+                    if construct_counter > 1:
+                        results += [self.read_lines_of_code(construct, True)]
+                    else:
+                        print '-' * 50
+                        results += [self.read_lines_of_code(construct)]
+                        print '-' * 50
+                    # We break here because we only show one construct in each cluster to make the output more readable
+                    # break
+                    # We just show the line numbers of the rest of constructs
                     construct_counter += 1
                 subcluster_count += 1
-
-            sresults.append(sres)
+                print '+' * 80
+            # if count % 2 == 0:
             count += 1
 
+        print(results)
+        results = list(filter(lambda x: bool(x), results))
+        
         # Create Path for SARIF output to be written to.
         sarif_path = os.path.join(DATA_DIR, SARIF_DIR)
         if not os.path.isdir(sarif_path):
@@ -290,10 +276,11 @@ class QueryInconsistency(Act):
 
         holder = SarifHolder()
         holder.addRun(srf.Run(srf.Tool("FICS"),
-            results=sresults))
+            results=results))
 
         with open(sarif_out, "w") as f:
             json.dump(holder.do_print(), f, indent=4, ensure_ascii=False)
+        
 
     def filter_results(self, results):
         existing_inconsistencies = self.get_ground_truth()
@@ -485,13 +472,15 @@ class QueryInconsistency(Act):
         return False
 
     def read_lines_of_code(self, construct, only_line_number=False):
-
         file_info = '{} ({}) ({})'.format(construct['source_file_path'], construct['function_name'],
                                           construct['variable_name'])
         print construct['graph_path']
+
+        lines = []
+
         if only_line_number:
             print file_info, construct['lines']
-            return
+            return self.srf_result(construct, lines)
         else:
             print file_info
 
@@ -510,7 +499,7 @@ class QueryInconsistency(Act):
                 line_number = 1
                 for line in remote_file:
                     if line_number in line_numbers:
-                        self.print_line(line, line_number, construct)
+                        lines += [self.print_line(line, line_number, construct)]
                     if line_number in margin_line_numbers:
                         self.print_line(line, line_number, construct, margin=True)
                     line_number += 1
@@ -530,21 +519,43 @@ class QueryInconsistency(Act):
                 line_number = 1
                 for line in local_file:
                     if line_number in line_numbers:
-                        self.print_line(line, line_number, construct)
+                        lines += [self.print_line(line, line_number, construct)]
                     if line_number in margin_line_numbers:
                         self.print_line(line, line_number, construct, margin=True)
                     line_number += 1
             except:
                 pass
 
+        return self.srf_result(construct, lines)
+
+    def srf_result(self, construct, lines):
+        lines = list(filter(lambda x: bool(x), lines))
+        print(lines)
+        if not lines:
+            return None
+
+        file_info = '{} ({}) ({})'.format(construct['source_file_path'],
+            construct['function_name'], construct['variable_name'])
+
+        region = srf.Region(start_line=min(lines), end_line=max(lines))
+        physical = srf.PhysicalLocation(
+                srf.ArtifactLocation(construct["source_file_path"]),
+                region=region),
+        logical = srf.LogicalLocation(str(file_info))
+        location = srf.Location(physical_location=physical,
+                logical_locations=[logical])
+
+        return srf.Result("Error", location)
+
+
     def print_line(self, line, line_number, construct, margin=False):
         line = line.strip()
         if line == '':
-            return
+            return None
 
         if margin:
             print bcolors.GREY + '{}: {}'.format(line_number, line.strip()) + bcolors.ENDC
-            return
+            return None
 
         if self.arguments.inconsistency_type == 'check':
             for node_diff in construct['node_diffs']:
@@ -552,7 +563,7 @@ class QueryInconsistency(Act):
                 if node_diff['node_name'].startswith('icmp'):
                     if str(line_number) in node_diff['lines']:
                         print bcolors.FAIL + '{}: {}'.format(line_number, line) + bcolors.ENDC
-                        return
+                        return line_number
         elif self.arguments.inconsistency_type == 'store':
             for node_diff in construct['node_diffs']:
                 # print node_diff
@@ -561,7 +572,7 @@ class QueryInconsistency(Act):
                             store_inconsistency in node_diff['node_name']:
                         if str(line_number) in node_diff['lines']:
                             print bcolors.FAIL + '{}: {}'.format(line_number, line) + bcolors.ENDC
-                            return
+                            return line_number
         elif self.arguments.inconsistency_type == 'call':
             for call_inconsistency in self.arguments.call_inconsistency:
                 for node_diff in construct['node_diffs']:
@@ -570,7 +581,7 @@ class QueryInconsistency(Act):
                     if result is not None:
                         if str(line_number) in node_diff['lines']:
                             print bcolors.FAIL + '{}: {}'.format(line_number, line) + bcolors.ENDC
-                            return
+                            return line_number
 
         elif self.arguments.inconsistency_type == 'type':
             for node_diff in construct['node_diffs']:
@@ -578,9 +589,11 @@ class QueryInconsistency(Act):
                     if node_diff['node_name'].startswith(type_inconsistency):
                         if str(line_number) in node_diff['lines']:
                             print bcolors.FAIL + '{}: {}'.format(line_number, line) + bcolors.ENDC
-                            return
+                            return line_number
 
         print bcolors.OKBLUE + '{}: {}'.format(line_number, line.strip()) + bcolors.ENDC
+
+        return None
 
     def get_ground_truth(self):
         items = []
@@ -614,23 +627,3 @@ class QueryInconsistency(Act):
                     return True
 
         return False
-
-def prune(items):                                                      
-    if type(items) == list:                                            
-        result = []                                                    
-        for i in items:                                                
-            if i is not None:                                          
-                result.append(prune(i))                                
-                                                                       
-        return result                                                  
-                                                                       
-    if type(items) == dict:                                            
-        result = {}                                                    
-        for i in items.items():                                        
-            if i[1] is not None:                                       
-                result.update({i[0]: prune(i[1])})                     
-                                                                       
-        return result                                                  
-                                                                       
-    print(items)
-    return items
