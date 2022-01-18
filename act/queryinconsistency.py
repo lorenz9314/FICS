@@ -236,24 +236,46 @@ class QueryInconsistency(Act):
             for subcluster in result['subclusters']:
                 construct_counter = 1
                 for construct in subcluster['constructs']:
-                    path = construct['graph_path'].split('bcs/')[1].split('/pdg')[0]
-                    sregion = srf.Region(start_line=min(construct['lines']),
-                            end_line=max(construct['lines']))
+                    for diff in construct["node_diffs"]:
+                        kind = diff["node_name"].split()[0]
 
-                    sloc = srf.Location(physical_location=srf.PhysicalLocation(
-                            srf.ArtifactLocation(path), region=sregion),
-                            logical_locations=srf.LogicalLocation(
-                            'Subcluster {}'.format(subcluster_count)))
-                    locations += [sloc]
+                        # If the node type is not of the kinds below,
+                        # that the loop is skipped and no entry is
+                        # created in the SARIF file.
+                        if kind not in \
+                                ["call", "check", "store","type"]:
+                            continue
+
+                        path = construct['source_file_path']
+                        lines = set(diff["lines"])
+                        sregion = srf.Region(
+                                start_line=min(construct['lines']),
+                                end_line=max(construct['lines']))
+
+                        sloc = srf.Location(
+                                physical_location=srf.PhysicalLocation(
+                                srf.ArtifactLocation(path),
+                                region=sregion),
+                                logical_locations=srf.LogicalLocation(
+                                'Subcluster {}' \
+                                        .format(subcluster_count)))
+
+                        sres = srf.Result(
+                            'Inconsistency {}' \
+                                .format(count),
+                            'Total subclusters: ({})' \
+                                .format(len(result['subclusters'])),
+                            'Granularity: ({})' \
+                                .format(result['construct_type']),
+                            'Similarity: ({})' \
+                                .format(result['firststep_threshold']),
+                            'ID: {}'\
+                                .format(result['_id']),
+                            'Dependency: {}' \
+                                .format(kind), locations=[sloc]) 
 
                     construct_counter += 1
                 subcluster_count += 1
-                sres = srf.Result('Inconsistency {}'.format(count), \
-                    'Total subclusters: ({})'.format(len(result['subclusters'])), \
-                    'Granularity: ({})'.format(result['construct_type']), \
-                    'Similarity: ({})'.format(result['firststep_threshold']), \
-                    'ID: {}'.format(result['_id']), \
-                    'Dependency: {}'.format(dependency), locations=locations) 
 
             sresults.append(sres)
             count += 1
