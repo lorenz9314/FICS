@@ -539,8 +539,8 @@ class QueryInconsistency(Act):
 
         region = srf.Region(start_line=min(lines), end_line=max(lines))
         physical = srf.PhysicalLocation(
-                srf.ArtifactLocation(construct["source_file_path"]),
-                region=region),
+                srf.ArtifactLocation(construct["source_file_path"],
+                    uri=construct["source_file_path"]), region=region),
         logical = srf.LogicalLocation(str(file_info))
         location = srf.Location(physical_location=physical,
                 logical_locations=[logical])
