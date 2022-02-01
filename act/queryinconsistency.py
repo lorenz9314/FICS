@@ -59,7 +59,8 @@ class QueryInconsistency(Act):
                     self.ssh_client.close()
 
         except Exception, e:
-            print e.message
+            import traceback
+            print traceback.format_exc()
             if self.arguments.ssh:
                 self.server.stop()
             # client.close()
@@ -220,10 +221,11 @@ class QueryInconsistency(Act):
             self.establish_ssh_client()
         self.mongodb_client.close()
 
-        result = srf.Result([], \
+        srf_result = srf.Result([], \
                 rule_id=self.arguments.inconsistency_type,
                 rule_index=rule_id(
                     self.arguments.inconsistency_type))
+        locs = []
         count = 1
 
         for result in local_results:
@@ -254,10 +256,10 @@ class QueryInconsistency(Act):
                     # print construct['lines']
 
                     if construct_counter > 1:
-                        results += [self.read_lines_of_code(construct, True)]
+                        locs += [self.read_lines_of_code(construct, True)]
                     else:
                         print '-' * 50
-                        results += [self.read_lines_of_code(construct)]
+                        locs += [self.read_lines_of_code(construct)]
                         print '-' * 50
                     # We break here because we only show one construct in each cluster to make the output more readable
                     # break
@@ -268,16 +270,20 @@ class QueryInconsistency(Act):
             # if count % 2 == 0:
             count += 1
 
-            for lines, construct in results:
+            for lines, construct in locs:
+                lines = list(filter(lambda x: bool(x), lines))
                 if not lines:
                     continue
 
-                result.append(srf.Location(min(lines),
+                print(lines)
+                srf_result.append(srf.Location(min(lines),
                         max(lines), construct['source_file_path']))
 
+
         tool = srf.Tool("FICS", "1.0", "1.0")
-        runs = srf.Run(tool, [result])
+        runs = srf.Run(tool, [srf_result])
         sarif = srf.Sarif([runs])
+
 
         # Create Path for SARIF output to be written to.
         sarif_path = os.path.join(DATA_DIR, SARIF_DIR)
@@ -490,7 +496,7 @@ class QueryInconsistency(Act):
 
         if only_line_number:
             print file_info, construct['lines']
-            return self.srf_result(construct, lines)
+            return construct['lines'], construct
         else:
             print file_info
 

@@ -35,6 +35,12 @@ class SarifBase(object):
 
         return _repr
 
+    def __str__(self):
+        return str(self.as_dict())
+
+    def __repr__(self):
+        return str(self.__str__)
+
 
 class Sarif(SarifBase):
 
@@ -58,9 +64,12 @@ class Sarif(SarifBase):
 
         """
 
-        return json.dumps(self.as_dict(),
-                ensure_ascii=False,
-                indent=2)
+        try:
+            return json.dumps(self.as_dict(),
+                    ensure_ascii=False,
+                    indent=2)
+        except Exception as e:
+            print e
 
 class Run(SarifBase):
 
