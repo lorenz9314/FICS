@@ -276,7 +276,7 @@ class QueryInconsistency(Act):
                         max(lines), construct['source_file_path']))
 
         tool = srf.Tool("FICS", "1.0", "1.0")
-        runs = Run(tool, [result])
+        runs = srf.Run(tool, [result])
         sarif = srf.Sarif([runs])
 
         # Create Path for SARIF output to be written to.

@@ -31,7 +31,6 @@ class SarifBase(object):
                         v[i] = v[i].as_dict()
                 _repr.update({k: v})
             if isinstance(v, SarifBase):
-                print v
                 _repr.update({k: v.as_dict()})
 
         return _repr
