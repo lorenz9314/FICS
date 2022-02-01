@@ -2,8 +2,7 @@ import hashlib
 from sre_parse import Pattern
 from tokenize import String
 
-from SarifHolder import SarifHolder
-import sarif_om as srf
+import py2_sarif as srf
 import json
 import os
 
@@ -23,6 +22,9 @@ from groundtruth import ground_truth
 from ssh_private_key_password import ip, username, password
 from bson.objectid import ObjectId
 
+_RULES = {"all": 0, "call": 1, "check": 2, "order": 3, "store":4,
+        "type": 5}
+rule_id = lambda x: _RULES[x] if x in _RULES else -1
 
 class QueryInconsistency(Act):
     server = None
@@ -218,7 +220,10 @@ class QueryInconsistency(Act):
             self.establish_ssh_client()
         self.mongodb_client.close()
 
-        results = []
+        result = srf.Result([], \
+                rule_id=self.arguments.inconsistency_type,
+                rule_index=rule_id(
+                    self.arguments.inconsistency_type))
         count = 1
 
         for result in local_results:
@@ -263,9 +268,17 @@ class QueryInconsistency(Act):
             # if count % 2 == 0:
             count += 1
 
-        print(results)
-        results = list(filter(lambda x: bool(x), results))
-        
+            for lines, construct in results:
+                if not lines:
+                    continue
+
+                result.append(srf.Location(min(lines),
+                        max(lines), construct['source_file_path']))
+
+        tool = srf.Tool("FICS", "1.0", "1.0")
+        runs = Run(tool, [result])
+        sarif = srf.Sarif([runs])
+
         # Create Path for SARIF output to be written to.
         sarif_path = os.path.join(DATA_DIR, SARIF_DIR)
         if not os.path.isdir(sarif_path):
@@ -274,13 +287,10 @@ class QueryInconsistency(Act):
         sarif_out = os.path.join(sarif_path,
                 self.current_project + ".sarif")
 
-        holder = SarifHolder()
-        holder.addRun(srf.Run(srf.Tool("FICS"),
-            results=results))
 
         with open(sarif_out, "w") as f:
-            json.dump(holder.do_print(), f, indent=4, ensure_ascii=False)
-        
+            f.write(sarif.finalize())
+
 
     def filter_results(self, results):
         existing_inconsistencies = self.get_ground_truth()
@@ -526,27 +536,7 @@ class QueryInconsistency(Act):
             except:
                 pass
 
-        return self.srf_result(construct, lines)
-
-    def srf_result(self, construct, lines):
-        lines = list(filter(lambda x: bool(x), lines))
-        print(lines)
-        if not lines:
-            return None
-
-        file_info = '{} ({}) ({})'.format(construct['source_file_path'],
-            construct['function_name'], construct['variable_name'])
-
-        region = srf.Region(start_line=min(lines), end_line=max(lines))
-        physical = srf.PhysicalLocation(
-                srf.ArtifactLocation(construct["source_file_path"],
-                    uri=construct["source_file_path"]), region=region),
-        logical = srf.LogicalLocation(str(file_info))
-        location = srf.Location(physical_location=physical,
-                logical_locations=[logical])
-
-        return srf.Result("Error", location)
-
+        return lines, construct
 
     def print_line(self, line, line_number, construct, margin=False):
         line = line.strip()
