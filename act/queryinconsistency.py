@@ -246,10 +246,10 @@ class QueryInconsistency(Act):
                     # print construct['lines']
 
                     if construct_counter > 1:
-                        reports.append(self.read_lines_of_code(construct, True))
+                        self.read_lines_of_code(construct, True)
                     else:
                         # print '-' * 50
-                        reports.append(self.read_lines_of_code(construct))
+                        self.read_lines_of_code(construct)
                         # print '-' * 50
                     # We break here because we only show one construct in each cluster to make the output more readable
                     # break
@@ -260,13 +260,16 @@ class QueryInconsistency(Act):
             # if count % 2 == 0:
             count += 1
 
+            reports.append((construct['lines'],
+                    construct['source_file_path']))
+
+
         reports = list(filter(lambda x: bool(x), reports))
+        print(reports)
 
         locations = []
         for lines, path in reports:
-            for line in lines:
-                line = line["line"]
-                locations.append(srf.Location(line, line, path))
+            locations.append(srf.Location(min(lines), max(lines), path))
 
         result = srf.Result(locations)
         tool = srf.Tool("FICS", "1.0", "1.0")
